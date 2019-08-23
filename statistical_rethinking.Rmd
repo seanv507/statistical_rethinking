@@ -1,0 +1,60 @@
+---
+title: "statistical rethinking"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+sudo apt-get install libssh2-1-dev1
+install.packages(c("coda","mvtnorm","devtools","loo"))
+
+library(devtools)
+devtools::install_github("rmcelreath/rethinking")
+
+```
+
+## 
+```{r}
+p_grid <- seq(from=0, to=1, length.out=1000)
+prob_p <- rep(1, 1000)
+prob_data <- dbinom(6,  size=9, prob=p_grid)
+posterior <- prob_data * prob_p
+posterior <- posterior / sum(posterior)
+samples <- sample(p_grid, prob=posterior, size=1e4, replace=TRUE)
+# posterior predictions
+nw <- rbinom(1e4, size=9, prob=samples)
+```
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+PI equal area in each tail
+HPDI (highest posterrior density intervals) narrowest interval containing mass
+
+## Chapter 1
+1. Suppose the globe tossing data had turned out to be 8 water in 15 tosses. Construct the posterior distribution, using grid approximation. Use the same flat prior as before.
+
+```{r HW week 1}
+p_grid <- seq(from=0, to=1, length.out=1000)
+prob_p <- rep(1, 1000)
+prob_data <- dbinom(8,  size=15, prob=p_grid)
+posterior <- prob_data * prob_p
+posterior <- posterior / sum(posterior)
+samples <- sample(p_grid, prob=posterior, size=1e4, replace=TRUE)
+# posterior predictions
+nw <- rbinom(1e4, size=9, prob=samples)
+
+```
+2. Start over in 1, but now use a prior that is zero below p = 0:5 and a constant
+above p = 0:5. This corresponds to prior information that a majority
+of the Earth’s surface is water. What difference does the better prior make?
+If it helps, compare posterior distributions (using both priors) to the true
+value p = 0:7.
+
+```{r}
+p_grid <- seq(from=0, to=1, length.out=1000)
+prob_p <- c(rep(0, 500), rep(1, 500))
+prob_data <- dbinom(6,  size=9, prob=p_grid)
+posterior <- prob_data * prob_p
+posterior <- posterior / sum(posterior)
+samples <- sample(p_grid, prob=posterior, size=1e4, replace=TRUE)
+# posterior predictions
+nw <- rbinom(1e4, size=9, prob=samples)
+hist(samples, breaks=1000)
