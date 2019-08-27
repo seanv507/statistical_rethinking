@@ -5,11 +5,14 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-sudo apt-get install libssh2-1-dev1
-install.packages(c("coda","mvtnorm","devtools","loo"))
+#sudo apt-get install libssh2-1-dev1
+#install.packages(c("coda","mvtnorm","devtools","loo"))
 
-library(devtools)
-devtools::install_github("rmcelreath/rethinking")
+#library(devtools)
+#devtools::install_github("rmcelreath/rethinking")
+library(rethinking)
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
 
 ```
 
@@ -24,7 +27,7 @@ samples <- sample(p_grid, prob=posterior, size=1e4, replace=TRUE)
 # posterior predictions
 nw <- rbinom(1e4, size=9, prob=samples)
 ```
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
 PI equal area in each tail
 HPDI (highest posterrior density intervals) narrowest interval containing mass
 
@@ -40,7 +43,7 @@ posterior <- posterior / sum(posterior)
 samples <- sample(p_grid, prob=posterior, size=1e4, replace=TRUE)
 # posterior predictions
 nw <- rbinom(1e4, size=9, prob=samples)
-
+dens(samples)
 ```
 2. Start over in 1, but now use a prior that is zero below p = 0:5 and a constant
 above p = 0:5. This corresponds to prior information that a majority
@@ -57,4 +60,204 @@ posterior <- posterior / sum(posterior)
 samples <- sample(p_grid, prob=posterior, size=1e4, replace=TRUE)
 # posterior predictions
 nw <- rbinom(1e4, size=9, prob=samples)
-hist(samples, breaks=1000)
+dens(samples)
+```
+
+
+Grid Approximation
+```{r}
+mu.list <- seq(from=140, to=160, length.out=2000)
+sigma.list <- seq(from=4, to=9, length.out=2000)
+post <- expand.grid(mu=mu.list, sigma=sigma.list)
+# expand.grid creates cartesian product but flattened
+post$LL <- sapply(1:nrow(post), function(i) sum(dnorm(d2$height, mean=post$mu[i], sd=post$sigma[i], log=TRUE)))
+post$prod <- post$LL + dnorm(post$mu, 178, 20, log=TRUE) + dunif(post$sigma, 0, 50, TRUE)
+post$prob <- exp(post$prod - max(post$prod))
+```
+
+```{r}
+contour_xyz(post$mu, post$sigma, post$prob)
+image_xyz(post$mu, post$sigma, post$prob)
+```
+
+Sample from posterior
+note that posterior for mu and sigma is close to gaussian
+```{r}
+# remember prob is 'tall' : 1 row for each mu, sigma
+sample.rows <- sample(1:nrow(post), size=1e4, replace=TRUE, prob=post$prob)
+sample.mu <- post$mu[sample.rows]
+sample.sigma <- post$sigma[sample.rows]
+plot(sample.mu, sample.sigma, cex=0.5, pch=16, col=col.alpha(rangi2,0.1))
+dens(sample.mu, norm.comp=TRUE); 
+
+dens(sample.sigma, norm.comp=TRUE)
+
+HPDI(sample.mu)
+HPDI(sample.sigma)
+```
+rerun with only 20 samples
+mean is still gaussian.  Why? no impact of variance distribution
+sd not Gaussian 
+
+```{r}
+d3 <- sample(d2$height, size=20)
+mu.list <- seq(from=150, to=170, length.out=2000)
+sigma.list <- seq(from=4, to=20, length.out=2000)
+post2 <- expand.grid(mu=mu.list, sigma=sigma.list)
+# expand.grid creates cartesian product but flattened
+post2$LL <- sapply(1:nrow(post2), function(i) sum(dnorm(d3, mean=post2$mu[i], sd=post2$sigma[i], log=TRUE)))
+post2$prod <- post2$LL + dnorm(post2$mu, 178, 20, log=TRUE) + dunif(post2$sigma, 0, 50, TRUE)
+post2$prob <- exp(post2$prod - max(post2$prod))
+sample.rows <- sample(1:nrow(post2), size=1e4, replace=TRUE, prob=post2$prob)
+sample.mu <- post2$mu[sample.rows]
+sample.sigma <- post2$sigma[sample.rows]
+plot(sample.mu, sample.sigma, cex=0.5, pch=16, col=col.alpha(rangi2,0.1))
+dens(sample.mu, norm.comp=TRUE); 
+
+dens(sample.sigma, norm.comp=TRUE)
+
+HPDI(sample.mu)
+HPDI(sample.sigma)
+
+```
+
+Here we assume the heights are normally distributed
+normal prior for mu, so normal posterior
+heights are assumed iid. Could argue conservative assumption given ignorance.
+Note that posterior map values close to ML.  Because flat priors and large data set
+We also look at impact of prior with tighter Gaussian 0.1 sd
+now posterior stays very close to prior for mu
+and variance increases to compensate for tight prior for mu
+
+NB can view prior as previous data: prior (mu, sigma^2) same as n samples with with mean mu
+TODO!!
+```{r code 4.24}
+library(rethinking)
+data(Howell1)
+d <- Howell1
+# adults
+d2 <- d[d$age >= 18, ]
+flist <- alist(
+  height ~ dnorm(mu, sigma),
+  mu ~ dnorm(178, 20),
+  sigma ~ dunif(0, 50)
+)
+m4.1 <- map(flist, data=d2)
+# plot priors
+curve(dnorm(x, 178, 20), from=100, to=250)
+# plot priors
+curve(dunif(x, 0, 50), from=-10, to=60)
+# so 50 sd assume 95% of individual heights lie within 100cm of average height - large range
+precis(m4.1)
+cat(mean(d2$height),sd(d2$height))
+
+flist <- 
+m4.2 <- map(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu ~ dnorm(178, 0.1),
+    sigma ~ dunif(0, 50)
+  ), 
+  data=d2)
+
+# plot priors
+curve(dnorm(x, 178, 20), from=100, to=250)
+curve(dnorm(x, 178, .1), from=100, to=250, add=TRUE)
+# plot priors
+curve(dunif(x, 0, 50), from=-10, to=60)
+# so 50 sd assume 95% of individual heights lie within 100cm of average height - large range
+precis(m4.1)
+precis(m4.2)
+cat(mean(d2$height),sd(d2$height))
+
+
+```
+Can sample from priors ...
+```{r}
+sample_mu <- rnorm(1e4, 178, 20)
+sample_sigma <- runif(1e4, 0, 50)
+prior_h <- rnorm(1e4, sample_mu, sample_sigma)
+dens(prior_h)
+gauss_h <- rnorm(1e4, 178, 25)
+dens(gauss_h, add=TRUE, col='red')
+```
+
+initial starting condition for map search
+```{r}
+start <- list(mu=mean(d2$height), sigma=sd(d2$height))
+```
+
+sampling from map - just multivariate gaussian
+variance cobvariance
+
+```{r}
+vcov(m4.1)
+diag(vcov(m4.1))
+cov2cor(vcov(m4.1))
+post <- extract.samples(m4.1, n=1e4)
+head(post)
+precis(post)
+```
+
+Getting $\sigma$ right. quadratic assumption for sigma can be problematic. conventional approach take log
+```{r}
+m4.1_logsigma <- map(
+  alist(
+    height ~ dnorm(mu, exp(log_sigma)),
+    mu ~ dnorm(178, 0.1),
+    log_sigma ~ dnorm(2, 10)
+  ), 
+  data=d2)
+
+post <- extract.samples(m4.1_logsigma) # default 10000
+sigma <- exp(post$log_sigma)
+```
+
+## Adding a predictor
+```{r}
+
+```
+
+params like a are intercepts, and are meaningless in isolation from other parameters (a person of weight zero has height 113)
+sigma - 95% of heights lie within +/- 10 cm.
+note almost perfect negative correlation.. This can cause problems in estimation
+```{r}
+m4.3 <- map(
+  alist(
+    height ~ dnorm(mu, sigma),
+    mu <-  a + b*weight,
+    a ~ dnorm(156, 100),
+    b ~ dnorm(0, 10),
+    sigma ~ dunif(0, 50)
+  ), 
+  data=d2)
+
+# show correlation matrix too
+precis(m4.3, corr=TRUE)
+plot(d2$height ~ d2$weight, col="blue")
+abline(a=coef(m4.3)["a"], b=coef(m4.3)["b"])
+post <- extract.samples(m4.3) 
+```
+
+intervals
+```{r}
+mu <- link(m4.3)
+str(mu)
+# 1000 rows (samples) by 352 columns=individuals - distribution of mu
+weight.seq <- seq(from=25, to=70, by=1)
+mu <- link(m4.3, data=data.frame(weight=weight.seq))
+str(mu)
+#use type="n" to hide raw data
+plot(height ~ weight, d2, type="n")
+for (i in 1:100){
+  points(weight.seq, mu[i,], pch=16, col=col.alpha(rangi2,0.1))
+}
+mu.mean <- apply(mu, 2, mean)
+mu.HPDI <- apply(mu, 2, HPDI, prob=0.89)
+plot(height ~ weight, d2, col=col.alpha(rangi2,0.5))
+lines(weight.seq, mu.mean)
+shade(mu.HPDI, weight.seq)
+
+
+```
+
