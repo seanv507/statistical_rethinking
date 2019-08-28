@@ -261,3 +261,46 @@ shade(mu.HPDI, weight.seq)
 
 ```
 
+```{r}
+
+N <- 100
+height <- rnorm(N, 10, 2)
+leg_prop <- runif(N, 0.4, 0.5)
+leg_left <- leg_prop * height + rnorm(N, 0, 0.02)
+leg_right <- leg_prop * height + rnorm(N, 0, 0.02)
+d <- data.frame(height, leg_left, leg_right)
+```
+
+```{r}
+m5.8 <- map(
+  alist(
+    height ~dnorm(mu, sigma),
+    mu <- a + bl *leg_left + br * leg_right,
+    a ~ dnorm(10, 100),
+    bl ~ dnorm(2, 1),
+    br ~ dnorm(2, 1),
+    sigma ~ dunif(0, 10)
+  ),
+  data=d)
+precis(m5.8)
+```
+
+
+```{r}
+library(glmnet)
+X <- as.matrix(d[,c("leg_left", "leg_right")])
+y <- as.matrix(d$height)
+md <- cv.glmnet(X, y, alpha=0, standardize=FALSE, lambda = seq(0.0001,0.01,length.out=1000))
+cat(md$lambda.min, md$lambda.1se,coef(m5.8)["sigma"])
+sigma_b <- coef(m5.8)["sigma"]/sqrt(min(md$lambda *N))
+sds <- sqrt(diag(vcov(m5.8)))
+lambda <- (coef(m5.8)["sigma"]/sds["bl"])^2/N
+md$glmnet.fit$beta
+```
+log likelihood of single point is $(\frac{\epsilon^2}{2\sigma^2})$
+
+prior is $\frac{\alpha^2}{2\sigma_\alpha^2}$
+therefore we have 
+ $  mse + \frac {\sigma^2}{N\sigma_\alpha^2}|\alpha|^2$
+ 
+ ie the lambda in glmnet is given by above expression
