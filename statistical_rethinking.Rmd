@@ -436,3 +436,130 @@ model {
 tadpoles_fit <- rstan::sampling(tadpoles, data = dat, chains=4 )
 ```
 
+# Statistics in Action
+
+```{r}
+data("Orthodont", package="nlme")
+head(Orthodont)
+```
+
+```{r}
+library(ggplot2)
+theme_set(theme_bw())
+pl <- ggplot(data=Orthodont) + geom_point(aes(x=age,y=distance), color="red", size=3) 
+pl
+```
+age only model
+```{r}
+lm1 <- lm(distance~age, data=Orthodont)
+summary(lm1)
+```
+
+
+```{r}
+pl + geom_line(aes(x=age,y=predict(lm1)))
+```
+
+investigate boys and girls separately
+```{r}
+pl + geom_line(aes(x=age,y=predict(lm1))) + facet_grid(.~ Sex )
+```
+
+
+```{r}
+lm2 <- lm(distance~age+Sex, data=Orthodont)
+summary(lm2)
+Orthodont$pred.lm2 <- predict(lm2)
+pl + geom_line(data=Orthodont,aes(x=age,y=pred.lm2)) + facet_grid(.~ Sex )
+```
+We could instead assume the same intercept but different slopes for boys and girls:
+
+```{r}
+lm3 <- lm(distance~age:Sex , data=Orthodont)
+summary(lm3)
+Orthodont$pred.lm3 <- predict(lm3)
+pl + geom_line(data=Orthodont,aes(x=age,y=pred.lm3)) + facet_grid(.~ Sex )
+```
+
+
+```{r}
+lm4 <- lm(distance~age:Sex+Sex, data=Orthodont)
+summary(lm4)
+Orthodont$pred.lm4 <- predict(lm4)
+pl + geom_line(data=Orthodont,aes(x=age,y=pred.lm4)) + facet_grid(.~ Sex )
+```
+
+*The p-value cannot be used as such since the design matrix is not orthogonal*
+```{r}
+C <- t(model.matrix(lm4))%*%model.matrix(lm4)
+C/sqrt(diag(C)%*%t(diag(C)))
+```
+
+```{r}
+summary(lm(distance ~ age , data=subset(Orthodont, Sex=="Male")))
+```
+
+ Let us look at the individual fits for 8 subjects,
+```{r}
+Subject.select <- c(paste0("M0",5:8),paste0("F0",2:5))
+Orthodont.select <- subset(Orthodont,Subject %in% Subject.select)
+ggplot(data=Orthodont.select) + geom_point(aes(x=age,y=distance), color="red", size=3) + 
+  geom_line(aes(x=age,y=predict(lm3,newdata=Orthodont.select))) + facet_wrap(~Subject, nrow=2) 
+```
+We see that the model for the boys, respectively for the girls, seems to underestimate or overestimate the individual data of the four boys, respectively the four girls.
+
+Indeed, we didn’t take into account the fact that the data are repeated measurements made on the same subjects. A more convenient plot for this type of data consists in joining the data of a same individual:
+
+```{r}
+library(ggplot2)
+theme_set(theme_bw())
+ggplot(data=Orthodont) + geom_point(aes(x=age,y=distance), color="red", size=3)  + 
+  geom_line(aes(x=age,y=distance,group=Subject)) # +  facet_grid(~Sex) 
+
+```
+##  Fitting linear mixed effects models to the orthodont data
+### Fitting a first model
+
+A first linear mixed effects model assumes that the birth distance and the growth rate (i.e. the intercept and the slope) may depend on the individual:
+
+We can use the function lmer for fitting this model. By default, the restricted mximum likelihood (REML) method is used.
+```{r}
+library(lme4)
+lmem <- lmer(distance ~ age + (age|Subject), data = Orthodont) 
+summary(lmem)
+```
+Note that functions fixef and VarCorr return these estimated parameters:
+
+```{r}
+(psi.pop <- fixef(lmem))
+```
+```{r}
+(Omega <- VarCorr(lmem)$Subject[,])
+```
+
+```{r}
+(sigma2 <- attr(VarCorr(lmem), "sc")^2)
+```
+
+The estimated individual parameters for our 8 selected individuals can be obtained using function coef
+
+
+```{r}
+Orthodont.i <- Orthodont[Orthodont$Subject=="M05",]
+yi <- Orthodont.i$distance
+Ai <- cbind(1,Orthodont.i$age)
+iO <- solve(Omega)
+Gammai <- solve(t(Ai)%*%Ai/sigma2 + iO)
+mui <- Gammai%*%(t(Ai)%*%yi/sigma2 + iO%*%psi.pop)
+mui
+```
+
+
+Individual predicted distances can also be computed and plotted with the observed distances
+
+```{r}
+
+Orthodont$pred.lmem <- fitted(lmem)
+ggplot(data=subset(Orthodont,Subject %in% Subject.select)) + geom_point(aes(x=age,y=distance), color="red", size=3) + 
+  geom_line(aes(x=age,y=pred.lmem)) + facet_wrap(~Subject, ncol=4) 
+```
