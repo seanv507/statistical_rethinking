@@ -8,8 +8,11 @@ knitr::opts_chunk$set(echo = TRUE)
 #sudo apt-get install libssh2-1-dev1
 #install.packages(c("coda","mvtnorm","devtools","loo"))
 
+library(rstan)
+library(shinystan)
 #library(devtools)
-#devtools::install_github("rmcelreath/rethinking")
+#devtools::install_github("rmcelreath/rethinking", force=TRUE)
+
 library(rethinking)
 options(mc.cores = parallel::detectCores())
 rstan_options(auto_write = TRUE)
@@ -284,10 +287,17 @@ m5.8 <- map(
   data=d)
 precis(m5.8)
 ```
+Use penalised ML with glmnet.
+the regularisation defaults much stronger.  How is this identified?
+(but then crossvalidate) .. and might not identify minimum in section
 
+Cannot set this up as a random effects model
 
 ```{r}
 library(glmnet)
+library(lme4)
+#lmer(height ~ leg_left|1,data=d)
+
 X <- as.matrix(d[,c("leg_left", "leg_right")])
 y <- as.matrix(d$height)
 md <- cv.glmnet(X, y, alpha=0, standardize=FALSE, lambda = seq(0.0001,0.01,length.out=1000))
@@ -296,7 +306,12 @@ sigma_b <- coef(m5.8)["sigma"]/sqrt(min(md$lambda *N))
 sds <- sqrt(diag(vcov(m5.8)))
 lambda <- (coef(m5.8)["sigma"]/sds["bl"])^2/N
 md$glmnet.fit$beta
+
+
 ```
+
+ 
+
 log likelihood of single point is $(\frac{\epsilon^2}{2\sigma^2})$
 
 prior is $\frac{\alpha^2}{2\sigma_\alpha^2}$
@@ -304,3 +319,120 @@ therefore we have
  $  mse + \frac {\sigma^2}{N\sigma_\alpha^2}|\alpha|^2$
  
  ie the lambda in glmnet is given by above expression
+ 
+Using factors as indices to coefficients.  Need to explicitly specify intercept term. and need quite a lot of regularisation to ensure a_0 captures average?
+could not match
+```{r }
+data(milk)
+d <-milk
+unique(d$clade)
+(d$clade_id <- coerce_index(d$clade))
+
+X <- model.matrix(~ factor(clade_id) + 0, d)
+y <-  as.matrix(d$kcal.per.g)
+md <- cv.glmnet(X,y, standardize=FALSE, alpha=0)
+lambda = md$lambda.min #min(md$lambda)
+
+lambda_idx <- which(md$lambda==lambda)[1]
+N <- nrow(X)
+p <- ncol(X)
+sigma_tr <- sqrt(sum((predict(md, s=lambda, newx=X) -y)^2)/(N-p))
+sigma_te <- sqrt(md$cvm[lambda_idx])
+sigma_b <- sqrt(md$cvm[lambda_idx]/(lambda * N))
+
+
+m5.16_alt = map(
+alist(
+  kcal.per.g ~ dnorm(mu, sigma),
+  mu <- a[clade_id],
+  a[clade_id] ~ dnorm(.6, 10),
+  sigma ~ dunif(0,10)
+),
+data=d
+)
+
+m5.16_alt_reg = map(
+alist(
+  kcal.per.g ~ dnorm(mu, sigma),
+  mu <- a[clade_id] +a_0,
+  a_0 ~ dnorm(0, 10),
+  a[clade_id] ~ dnorm(0, .4),
+  sigma <- 0.12  #~ dunif(0,10)
+),
+data=d
+)
+precis(m5.16_alt, depth=2)
+precis(m5.16_alt_reg, depth=2)
+
+coef(md, s=lambda)
+coef(m5.16_alt_reg)
+```
+
+```{r}
+library(rethinking)
+data(reedfrogs)
+d <- reedfrogs
+
+d$tank <- 1:nrow(d)
+dat <- list(
+n_tanks = nrow(d),
+S = d$surv,
+N = d$density,
+tank = d$tank )
+str(d)
+X <- model.matrix( ~ as.factor(tank) + 0, data=d)
+y <- as.matrix(cbind(d$density - d$surv, d$surv))
+n_tanks <- nrow(d)
+d_exp1 <- data.frame(tank=as.factor(d$tank), N=d$density, S=d$surv)
+al <-  vector("list", n_tanks)
+for (i in seq(n_tanks)){
+  print(i)
+  al[[i]] <- data.frame(tank=rep(d_exp1[i, 'tank'], d_exp1[i, 'N']), S=c(rep(1, d_exp1[i, 'S']), rep(0, d_exp1[i, 'N'] - d_exp1[i, 'S'])))
+}
+d_expand <- do.call(rbind,al)
+X_expand <- model.matrix( ~ as.factor(tank) + 0, data=d_expand)
+y_expand <- as.matrix(d_expand$S)
+
+#dup <- function(x){data.frame(tank=rep(x[[1]], x[[2]]))}#,S=rbind(rep(1, x[[3]]), rep(0, x[[2]] -x[[3]])))}
+
+
+```
+
+
+
+```{r}
+mod <- cv.glmnet(X,y, family='binomial', alpha=0)
+plot(mod)
+mod_expand <- cv.glmnet(X_expand,y_expand, family='binomial', alpha=0)
+plot(mod_expand)
+
+```
+
+```{stan output.var="tadpoles"}
+
+data {
+  int<lower=0> n_tanks;          // number of schools 
+  int S[n_tanks];               // survival
+  int N[n_tanks];               // original
+  
+}
+
+parameters {
+  real a_bar;
+  real a[n_tanks]; 
+  real<lower=0> sigma[n_tanks];  // s.e. of effect estimates 
+  vector[n_tanks] eta;
+}
+
+model {
+  target += normal_lpdf(a_bar| 0, 1.5);
+  target += normal_lpdf(a | a_bar, sigma);
+  target += binomial_logit_lpmf(S | N, a);
+}
+
+```
+
+```{r}
+tadpoles_fit <- rstan::sampling(tadpoles, data = dat, chains=4 )
+```
+
