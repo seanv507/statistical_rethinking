@@ -25,6 +25,24 @@ This is a well known no-no in Machine learning.  eg You don't take the model whi
 
 However, it is still commonly performed.  eg 'feature selection' based on high correlation, low p-values etc.
 
+```{r }
+n_channels <- 100
+n_samples <- 100000
+samples <- matrix(rnorm(n_samples*n_channels), ncol = n_channels)
+mean_10 <- colMeans(samples[,1:10])
+mean_100 <- colMeans(samples[,1:100])
+sd_10 <- colSd(samples[,1:10])
+sd_100 <- colSd(samples[,1:100])
+
+max_10 <- colMax(samples[,1:10])
+max_100 <- colMax(samples[,1:100])
+df <- data.frame(max_1=samples[,1], max_10=max_10, max_100=max_100)
+dfg <- df %>% gather(max_1, max_10, max_100, key="max", value="value")
+ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=.1) + facet_grid( max ~ .)
+```
+
+Note that the above in bayesian terms has prior $\delta(x)$, ie we assume prior has mean 0 and variance 0.
+
 ```{stan output.var="simulation"}
 data{
   int<lower=0> N_vars;
@@ -139,21 +157,7 @@ ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=.1) + facet_grid( max ~ 
 
 ```
 
-```{r }
-n_channels <- 100
-n_samples <- 100000
-samples <- matrix(rnorm(n_samples*n_channels), ncol = n_channels)
-mean_10 <- colMeans(samples[,1:10])
-mean_100 <- colMeans(samples[,1:100])
-sd_10 <- colSd(samples[,1:10])
-sd_100 <- colSd(samples[,1:100])
 
-max_10 <- colMax(samples[,1:10])
-max_100 <- colMax(samples[,1:100])
-df <- data.frame(max_1=samples[,1], max_10=max_10, max_100=max_100)
-dfg <- df %>% gather(max_1, max_10, max_100, key="max", value="value")
-ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=.1) + facet_grid( max ~ .)
-```
 
 ## Dawid
 In [selection paradoxes of Bayesian inference](https://projecteuclid.org/download/pdf_1/euclid.lnms/1215463797) Dawid points out that no adjustment seems required in a Bayesian framework.
