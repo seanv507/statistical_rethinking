@@ -1,5 +1,5 @@
 ---
-title: "Dawig selection paradox"
+title: "Dawid selection paradox"
 output: html_document
 ---
 
@@ -54,16 +54,19 @@ N_replicates=25
 mu=0
 tau=10
 sigma=5
+N_iter <- 1000
 
-sim <- sampling(simulation, algorithm = "Fixed_param",   data=list(N_vars=100,  N_replicates=N_replicates, mu=mu, tau=tau, sigma=sigma),
-			chains=1, warmup=0, iter=1000)
+sim <- sampling(simulation, algorithm = "Fixed_param",   data=list(N_vars=N_vars,  N_replicates=N_replicates, mu=mu, tau=tau, sigma=sigma),
+			chains=1, warmup=0, iter=N_iter)
 z <- e2 <- rstan::extract(sim)
 str(z)
+# z$x : n_iter x N_replicates x N_vars
 ```
-
+standard error of mean is sigma^2/N_replicates = 1 
 
 ```{r}
 colMax <- function(X) apply(X, 1, max)
+colIdxMax <- function(X) apply(X, 1, function (r) which.max(r))
 colSd <- function(X) apply(X, 1, sd)
 
 mean_i <- matrix(NA, nrow = dim(z$x)[1],
@@ -76,20 +79,65 @@ for(i in 1:dim(z$x)[1]) {
     sd_i[i, j] <- sd(z$x[i, , j])
   }
 }
+# calculate index of mean
+max_1 <- mean_i[,1] - z$mu_i[, 1]
+idxmax_10 <- matrix(c(seq(N_iter),colIdxMax(mean_i[, 1:10])), ncol=2, byrow=F)
+idxmax_10 <- matrix(c(seq(N_iter),colIdxMax(mean_i[, 1:100])), ncol=2, byrow=F)
 
-max_1 <- mean_i[,1]
-max_10 <- colMax(mean_i[,1:10])
-max_100 <- colMax(mean_i[,1:100])
+max_10 <- mean_i[idxmax_10] - z$mu_i[idxmax_10]
+max_100 <- mean_i[idxmax_100] - z$mu_i[idxmax_100]
+
 
 df <- data.frame(max_1, max_10, max_100)
 dfg <- df %>% gather(max_1, max_10, max_100, key="max", value="value")
-ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=tau/10) + facet_grid( max ~ .)
+ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=tau/100) + facet_grid( max ~ .) + ggtitle("bias from true mu_i")
 
 ```
 ```{r}
+i_sample <- 1
+x_data <- z$x[i_sample, ,]
 
 ```
 
+```{stan output.var=inference}
+data {
+  real mu;
+  real tau;
+  int<lower=0> N_replicates;
+  int<lower=0> N_vars;
+  matrix[N_replicates, N_vars] x;
+}
+parameters {
+  row_vector[N_vars] mu_i;
+  real<lower=0> sigma;
+}
+model {
+  mu_i ~ normal(mu, tau);
+  for (j_replicates in 1:N_replicates){
+    x[j_replicates] ~ normal(mu_i, sigma);
+  }
+  
+}
+```
+
+```{r}
+max_1 <- numeric(N_iter)
+max_10 <- numeric(N_iter)
+max_100 <- numeric(N_iter)
+for (i_iter in 1: N_iter){
+  fit <- optimizing(inference, data = list(N_vars=N_vars, N_replicates=N_replicates, mu=mu, tau=tau,      sigma=sigma, x=z$x[i_iter, ,]))
+  mu_est <- fit$par[1:N_vars]
+  sigma_est <- fit$par[N_vars + 1]
+  max_1[i_iter] <- mu_est[1]
+  max_10[i_iter] <- max(mu_est[1:10])
+  max_100[i_iter] <- max(mu_est[1:100])
+}
+
+df <- data.frame(max_1=max_1, max_10=max_10, max_100=max_100)
+dfg <- df %>% gather(max_1, max_10, max_100, key="max", value="value")
+ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=.1) + facet_grid( max ~ .)
+
+```
 
 ```{r }
 n_channels <- 100
