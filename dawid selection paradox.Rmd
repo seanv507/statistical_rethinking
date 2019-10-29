@@ -40,8 +40,9 @@ df <- data.frame(max_1=samples[,1], max_10=max_10, max_100=max_100)
 dfg <- df %>% gather(max_1, max_10, max_100, key="max", value="value")
 ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=.1) + facet_grid( max ~ .)
 ```
-
-Note that the above in bayesian terms has prior $\delta(x)$, ie we assume prior has mean 0 and variance 0.
+### Frequentist Viewpoint vs Bayesian
+Note that the above in Bayesian terms has prior $\delta(x)$, ie we assume prior has mean 0 and variance 0.  Perhaps a Bayesian would argue this is an unrealistic situation to focus on: we should instead look at what happens with a range of mu.
+We replicate with a non zero variance for the true distribution parameters, and calculate the error/bias between sample mean (after finding maximum) and actual generating value ($\mu_i$)
 
 ```{stan output.var="simulation"}
 data{
@@ -70,9 +71,9 @@ see [making predictions from stan models](https://medium.com/@alex.pavlakis/maki
 N_vars=100
 N_replicates=25
 mu=0
-tau=10
+tau=1
 sigma=5
-N_iter <- 1000
+N_iter <- 10000
 
 sim <- sampling(simulation, algorithm = "Fixed_param",   data=list(N_vars=N_vars,  N_replicates=N_replicates, mu=mu, tau=tau, sigma=sigma),
 			chains=1, warmup=0, iter=N_iter)
@@ -100,7 +101,7 @@ for(i in 1:dim(z$x)[1]) {
 # calculate index of mean
 max_1 <- mean_i[,1] - z$mu_i[, 1]
 idxmax_10 <- matrix(c(seq(N_iter),colIdxMax(mean_i[, 1:10])), ncol=2, byrow=F)
-idxmax_10 <- matrix(c(seq(N_iter),colIdxMax(mean_i[, 1:100])), ncol=2, byrow=F)
+idxmax_100 <- matrix(c(seq(N_iter),colIdxMax(mean_i[, 1:100])), ncol=2, byrow=F)
 
 max_10 <- mean_i[idxmax_10] - z$mu_i[idxmax_10]
 max_100 <- mean_i[idxmax_100] - z$mu_i[idxmax_100]
@@ -137,18 +138,27 @@ model {
   
 }
 ```
+## MAP estimate for estimating mu at max sample mean
 
 ```{r}
 max_1 <- numeric(N_iter)
 max_10 <- numeric(N_iter)
 max_100 <- numeric(N_iter)
-for (i_iter in 1: N_iter){
+for (i_iter in 1:N_iter){
   fit <- optimizing(inference, data = list(N_vars=N_vars, N_replicates=N_replicates, mu=mu, tau=tau,      sigma=sigma, x=z$x[i_iter, ,]))
   mu_est <- fit$par[1:N_vars]
   sigma_est <- fit$par[N_vars + 1]
-  max_1[i_iter] <- mu_est[1]
-  max_10[i_iter] <- max(mu_est[1:10])
-  max_100[i_iter] <- max(mu_est[1:100])
+  
+  idxmax_10 <- which.max(mu_est[1:10])
+  idxmax_100 <- which.max(mu_est[1:100])
+
+  max_1[i_iter] <- mu_est[1] - z$mu_i[i_iter, 1]
+  max_10[i_iter] <- mu_est[idxmax_10] - z$mu_i[i_iter, idxmax_10]
+  max_100[i_iter] <- mu_est[idxmax_100] - z$mu_i[i_iter, idxmax_100]
+  if (i_iter <10) {
+    cat(max_1[i_iter], max_10[i_iter], max_100[i_iter])
+  }
+  
 }
 
 df <- data.frame(max_1=max_1, max_10=max_10, max_100=max_100)
@@ -214,9 +224,3 @@ In posterior, $\mu_i \sim N(y_i, (\frac{1}{\sigma^2} + \frac{1}{\tau^2})^{-1}), 
 So large values of $\x^*$ are shifted downwards.  But effect depends only on size of $x^*$ and not on selection process (eg number of treatments).
 In particular no shrinkage if prior variance is large compared to data-precision $\sigma$
 
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
