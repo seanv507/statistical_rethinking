@@ -1,6 +1,6 @@
 ---
 title: "Dawid selection paradox"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -13,6 +13,12 @@ library(tidyr)
 library(ggplot2)
 ```
 
+```{r}
+colMax <- function(X) apply(X, 1, max)
+colIdxMax <- function(X) apply(X, 1, function (r) which.max(r))
+colSd <- function(X) apply(X, 1, sd)
+```
+
 ## Selecting the maximum, will not necessarily identify the population value
 Here we generate standard normal variables and look at the sample distribution for a single variable, max of 10 and max of 100.  This selection introduces a bias.  Each of our 100 variables actually have zero mean, and an estimate of the population mean by first selecting is biased.
 ie We should estimate a population mean of zero.
@@ -21,7 +27,7 @@ This bias depends on many things
 1. signal: noise ratio if $\mu_i \gg \sigma$ then there will be little effect
 2. if we take max of more variables we have a larger effect
 
-This is a well known no-no in Machine learning.  eg You don't take the model which has the lowest error on your training data, you use crossvalidation. [why not multiple selection on test data then?]
+This is a well known no-no in Machine learning.  eg You don't take the model which has the lowest error on your training data, you use crossvalidation. [Note that trying lots of models by crossvalidationmultiple selection on test data then?]
 
 However, it is still commonly performed.  eg 'feature selection' based on high correlation, low p-values etc.
 
@@ -40,6 +46,7 @@ df <- data.frame(max_1=samples[,1], max_10=max_10, max_100=max_100)
 dfg <- df %>% gather(max_1, max_10, max_100, key="max", value="value")
 ggplot(data=dfg) + geom_histogram(aes(x=value),binwidth=.1) + facet_grid( max ~ .)
 ```
+
 ### Frequentist Viewpoint vs Bayesian
 Note that the above in Bayesian terms has prior $\delta(x)$, ie we assume prior has mean 0 and variance 0.  Perhaps a Bayesian would argue this is an unrealistic situation to focus on: we should instead look at what happens with a range of mu.
 We replicate with a non zero variance for the true distribution parameters, and calculate the error/bias between sample mean (after finding maximum) and actual generating value ($\mu_i$)
@@ -84,9 +91,6 @@ str(z)
 standard error of mean is sigma^2/N_replicates = 1 
 
 ```{r}
-colMax <- function(X) apply(X, 1, max)
-colIdxMax <- function(X) apply(X, 1, function (r) which.max(r))
-colSd <- function(X) apply(X, 1, sd)
 
 mean_i <- matrix(NA, nrow = dim(z$x)[1],
                   ncol = dim(z$x)[3])
@@ -118,7 +122,7 @@ x_data <- z$x[i_sample, ,]
 
 ```
 
-```{stan output.var=inference}
+```{stan output.var="inference"}
 data {
   real mu;
   real tau;
