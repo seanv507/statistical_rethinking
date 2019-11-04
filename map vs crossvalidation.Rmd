@@ -16,7 +16,7 @@ $$ height \sim N(10, 2) \\
 legprop \sim uniform(Nsamples, 0.4, 0.5)$$
 
 ```{r data generation}
-N_samples <- 1000
+N_samples <- 100
 height <- rnorm(N_samples, 10, 2)
 leg_prop <- runif(N_samples, 0.4, 0.5)
 leg_left <- leg_prop * height + rnorm(N_samples, 0, 0.02)
@@ -47,17 +47,58 @@ model {
   height ~ normal(a + bl *leg_left + br * leg_right, sigma);
 }
 ```
+
+```{stan output.var="height_inference_6_1_tau"}
+data {
+  int<lower=0> N_samples;
+  vector[N_samples] height;
+  vector[N_samples] leg_left;
+  vector[N_samples] leg_right;
+}
+parameters {
+  real a;
+  real bl;
+  real br;
+  real<lower=0> sigma;
+  real<lower=0> b_std;
+}
+model {
+	a ~ normal(10, 100);
+	bl ~ normal(2, b_std);
+	br ~ normal(2, b_std);
+  sigma ~ uniform(0,10);
+  b_std ~ uniform(0,10);
+  height ~ normal(a + bl *leg_left + br * leg_right, sigma);
+}
+```
+
 ## MAP estimate for estimating mu at max sample mean
 
 ```{r}
-b_std <- 10
-fit <- optimizing(height_inference_6_1, data = list(b_std=b_std, N_samples=N_samples, height=height, leg_left=leg_left, leg_right=leg_right), as_vector=FALSE, hessian=TRUE)
-fit$par
-vcov <-  solve(-fit$hessian)
-print(vcov)
+df_l <- list()
 
-sds <- sqrt(diag(vcov))
-lambda <- (fit$par$sigma/sds["bl"])^2/N_samples
+fit_tau <- optimizing(height_inference_6_1_tau, data = list(N_samples=N_samples, height=height, leg_left=leg_left,
+																											leg_right=leg_right), as_vector=FALSE, verbose=TRUE)
+for (b_std in seq(1,10)){
+	print(b_std)
+	fit <- optimizing(height_inference_6_1, data = list(b_std=b_std, N_samples=N_samples, height=height, leg_left=leg_left,
+																											leg_right=leg_right), as_vector=FALSE, verbose=TRUE)
+	
+	df_l[[length(df_l) + 1]] = fit$par
+	lambda <- (fit$par$sigma/b_std)^2/N_samples
+}
+df <- as.data.frame(do.call(rbind, df_l))
+
+
+df$x <- seq(1,10)
+df_tau$x <- seq(1,10)
+plot(df$x,df$bl)
+points(df$x,df$br, col="red")
+points(fit_tau$par$b_std,fit_tau$par$bl, col="green")
+points(fit_tau$par$b_std,fit_tau$par$br, col="green")
+
+
+ 
 #?? vcov 
 
 ```
@@ -73,11 +114,10 @@ Cannot set this up as a random effects model?
 X <- as.matrix(d[,c("leg_left", "leg_right")])
 y <- as.matrix(d$height)
 md <- cv.glmnet(X, y, alpha=0, standardize=TRUE, lambda = seq(0.0001,0.1,length.out=1000))
-```
 
-```{r}
 cat(md$lambda.min, md$lambda.1se, lambda, fit$par$sigma)
 sigma_b <- fit$par$sigma / sqrt(md$lambda.min *N_samples)
+# regularisation term
 fit$par
 print("coefficient using MAP lambda estimate")
 coef(md, lambda)
@@ -86,12 +126,3 @@ coef(md, md$lambda.min)
 
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
