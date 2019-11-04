@@ -24,6 +24,7 @@ Here we generate standard normal variables and look at the sample distribution f
 ie We should estimate a population mean of zero.
 
 This bias depends on many things
+
 1. signal: noise ratio if $\mu_i \gg \sigma$ then there will be little effect
 2. if we take max of more variables we have a larger effect
 
