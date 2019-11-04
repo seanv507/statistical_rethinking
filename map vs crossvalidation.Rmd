@@ -10,10 +10,13 @@ library(glmnet)
 ```
 
 # Crossvalidation vs MAP
-Here we genereate correlated data
+Here we generate correlated data
+
+$$ height \sim N(10, 2) \\
+legprop \sim uniform(Nsamples, 0.4, 0.5)$$
 
 ```{r data generation}
-N_samples <- 100
+N_samples <- 1000
 height <- rnorm(N_samples, 10, 2)
 leg_prop <- runif(N_samples, 0.4, 0.5)
 leg_left <- leg_prop * height + rnorm(N_samples, 0, 0.02)
@@ -22,9 +25,10 @@ d <- data.frame(height, leg_left, leg_right)
 ```
 
 
-```{stan output.var="height_inference_5_8"}
+```{stan output.var="height_inference_6_1"}
 data {
   int<lower=0> N_samples;
+  real<lower=0> b_std;
   vector[N_samples] height;
   vector[N_samples] leg_left;
   vector[N_samples] leg_right;
@@ -37,8 +41,8 @@ parameters {
 }
 model {
 	a ~ normal(10, 100);
-	bl ~ normal(2, 1);
-	br ~ normal(2, 1);
+	bl ~ normal(2, b_std);
+	br ~ normal(2, b_std);
   sigma ~ uniform(0,10);
   height ~ normal(a + bl *leg_left + br * leg_right, sigma);
 }
@@ -46,8 +50,14 @@ model {
 ## MAP estimate for estimating mu at max sample mean
 
 ```{r}
-fit <- optimizing(height_inference_5_8, data = list(N_samples=N_samples, height=height, leg_left=leg_left, leg_right=leg_right), as_vector=FALSE, hessian=TRUE)
-vcov <- try( solve(fit$hessian) )  
+b_std <- 10
+fit <- optimizing(height_inference_6_1, data = list(b_std=b_std, N_samples=N_samples, height=height, leg_left=leg_left, leg_right=leg_right), as_vector=FALSE, hessian=TRUE)
+fit$par
+vcov <-  solve(-fit$hessian)
+print(vcov)
+
+sds <- sqrt(diag(vcov))
+lambda <- (fit$par$sigma/sds["bl"])^2/N_samples
 #?? vcov 
 
 ```
@@ -62,12 +72,18 @@ Cannot set this up as a random effects model?
 
 X <- as.matrix(d[,c("leg_left", "leg_right")])
 y <- as.matrix(d$height)
-md <- cv.glmnet(X, y, alpha=0, standardize=FALSE, lambda = seq(0.0001,0.01,length.out=1000))
-cat(md$lambda.min, md$lambda.1se,fit$par$sigma)
-sigma_b <- fit$par$sigma / sqrt(min(md$lambda *N_samples))
-sds <- sqrt(diag(vcov(m5.8)))
-lambda <- (coef(m5.8)["sigma"]/sds["bl"])^2/N
-md$glmnet.fit$beta
+md <- cv.glmnet(X, y, alpha=0, standardize=TRUE, lambda = seq(0.0001,0.1,length.out=1000))
+```
+
+```{r}
+cat(md$lambda.min, md$lambda.1se, lambda, fit$par$sigma)
+sigma_b <- fit$par$sigma / sqrt(md$lambda.min *N_samples)
+fit$par
+print("coefficient using MAP lambda estimate")
+coef(md, lambda)
+print("coefficient based on crossvalidation")
+coef(md, md$lambda.min)
+
 ```
 
 ## Including Plots
